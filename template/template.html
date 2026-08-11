@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face {
+    font-family: 'Raleway';
+    src: url('fonts/Raleway-VariableFont_wght.ttf') format('truetype');
+    font-weight: 100 900;
+  }
+  @font-face {
+    font-family: 'Gistesy';
+    src: url('fonts/Gistesy.ttf') format('truetype');
+  }
+  @font-face {
+    font-family: 'Open Sauce Black';
+    src: url('fonts/OpenSauceSans-Black.ttf') format('truetype');
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 736px;
+    height: 736px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #bg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 736px;
+    height: 736px;
+    z-index: 0;
+  }
+
+  /* Text block sits right under the logo and grows downward, so short
+     text stays tight instead of floating in the middle of empty space. */
+  #content-wrap {
+    position: absolute;
+    left: 130px;
+    top: 195px;
+    width: 250px;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #thought-text {
+    font-family: 'Raleway', sans-serif;
+    font-weight: 400;
+    color: #201f1f;
+    text-align: center;
+    line-height: 1.2;
+    font-size: 34px; /* starting size; auto-shrink script adjusts this */
+    width: 100%;
+  }
+  #bible-text {
+    font-family: 'Gistesy', cursive;
+    color: #201f1f;
+    text-align: center;
+    font-size: 32px;
+    width: 100%;
+    margin-top: 18px;
+  }
+
+  /* Date, sits on the wax-seal circle bottom-left */
+  #date-box {
+    position: absolute;
+    left: 85px;
+    top: 497px;
+    width: 70px;
+    height: 70px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #date-text {
+    font-family: 'Open Sauce Black', sans-serif;
+    font-weight: 900;
+    color: #ffffff;
+    text-align: center;
+    line-height: 1.15;
+    font-size: 15px;
+    width: 100%;
+  }
+</style>
+</head>
+<body>
+  <img id="bg" src="background.png">
+
+  <div id="content-wrap">
+    <div id="thought-text">{{THOUGHT}}</div>
+    <div id="bible-text">{{BIBLE_REFERENCE}}</div>
+  </div>
+
+  <div id="date-box">
+    <div id="date-text">{{DATE_LINE_1}}<br>{{DATE_LINE_2}}</div>
+  </div>
+
+  <script>
+    // Shrink the thought text until the whole stacked block (thought +
+    // Bible reference) fits within the available parchment space, so
+    // short text stays tight under the logo and long text never spills
+    // past the seal.
+    const MAX_BLOCK_HEIGHT = 265; // from top of content-wrap (195px) to seal (460px)
+
+    function fitText() {
+      const thoughtEl = document.getElementById('thought-text');
+      const wrapEl = document.getElementById('content-wrap');
+      let size = 34;
+      thoughtEl.style.fontSize = size + 'px';
+      while (size > 14 && wrapEl.scrollHeight > MAX_BLOCK_HEIGHT) {
+        size -= 1;
+        thoughtEl.style.fontSize = size + 'px';
+      }
+      window.__fitDone = true;
+    }
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(fitText);
+    } else {
+      window.onload = fitText;
+    }
+  </script>
+</body>
+</html>
