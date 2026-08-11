@@ -6,7 +6,6 @@ on:
     - cron: "0 10 * * *"
   workflow_dispatch: {}  # lets you manually trigger a run from the GitHub Actions tab, for testing
 
-# Allows this workflow to commit the generated image back to the repo
 permissions:
   contents: write
 
@@ -27,35 +26,9 @@ jobs:
           pip install playwright requests
           playwright install --with-deps chromium
 
-      - name: Generate today's image + caption
-        run: python generate_daily_content.py
-
-      - name: Commit and push the generated image
-        run: |
-          git config user.name "daily-manna-bot"
-          git config user.email "actions@github.com"
-          git add template/output.png template/caption.txt
-          git commit -m "Daily Manna image for $(date +'%Y-%m-%d')" || echo "Nothing to commit"
-          git push
-
-      - name: Wait for GitHub's CDN to catch up
-        run: sleep 30
-
-      - name: Post to Facebook and Instagram
+      - name: Run full daily pipeline
         env:
           PAGE_ACCESS_TOKEN: ${{ secrets.PAGE_ACCESS_TOKEN }}
-        run: |
-          python -c "
-          from post_to_meta import post_to_facebook, post_to_instagram
-          import os
-
-          caption = open('template/caption.txt', encoding='utf-8').read()
-          token = os.environ['PAGE_ACCESS_TOKEN']
-          raw_url = 'https://raw.githubusercontent.com/Tobifunmi/daily-manna-automation/main/template/output.png'
-
-          print('Posting to Facebook...')
-          print(post_to_facebook('template/output.png', caption, token))
-
-          print('Posting to Instagram...')
-          print(post_to_instagram(raw_url, caption, token))
-          "
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python run_daily_pipeline.py
