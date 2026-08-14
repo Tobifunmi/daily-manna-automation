@@ -43,19 +43,30 @@ def post_to_instagram(image_public_url: str, caption: str, page_access_token: st
     Meta's actual message if anything fails."""
     import time
 
-    # Step 1: create the media container
+    # Step 1: create the media container — retry a few times, since
+    # "media could not be fetched" errors are often just a transient
+    # timing issue with the CDN not having caught up yet
     container_url = f"{GRAPH_BASE}/{IG_BUSINESS_ID}/media"
-    container_resp = requests.post(
-        container_url,
-        data={
-            "image_url": image_public_url,
-            "caption": caption,
-            "access_token": page_access_token,
-        },
-    )
-    if container_resp.status_code != 200:
-        raise RuntimeError(f"Instagram container creation failed: {container_resp.text}")
-    creation_id = container_resp.json()["id"]
+    creation_id = None
+    last_error = None
+    for attempt in range(4):
+        container_resp = requests.post(
+            container_url,
+            data={
+                "image_url": image_public_url,
+                "caption": caption,
+                "access_token": page_access_token,
+            },
+        )
+        if container_resp.status_code == 200:
+            creation_id = container_resp.json()["id"]
+            break
+        last_error = container_resp.text
+        print(f"Container creation attempt {attempt + 1} failed, retrying in 10s: {last_error}")
+        time.sleep(10)
+
+    if creation_id is None:
+        raise RuntimeError(f"Instagram container creation failed after retries: {last_error}")
 
     # Step 2: poll until Instagram has actually finished fetching/processing
     # the image, instead of guessing a fixed wait time

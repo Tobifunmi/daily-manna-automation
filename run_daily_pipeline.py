@@ -73,7 +73,8 @@ def run_stage(stage_name, fn, *args, **kwargs):
         sys.exit(1)
 
 
-def git_commit_and_push():
+def git_commit_and_push() -> str:
+    """Commits + pushes today's image, and returns the resulting commit SHA."""
     subprocess.run(["git", "config", "user.name", "daily-manna-bot"], check=True)
     subprocess.run(["git", "config", "user.email", "actions@github.com"], check=True)
     subprocess.run(["git", "add", "template/output.png", "template/caption.txt"], check=True)
@@ -82,6 +83,11 @@ def git_commit_and_push():
         subprocess.run(["git", "push"], check=True)
     else:
         print("Nothing new to commit (image unchanged) — continuing anyway.")
+
+    sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    return sha
 
 
 def main():
@@ -99,11 +105,11 @@ def main():
     with open("template/caption.txt", "w", encoding="utf-8") as f:
         f.write(caption)
 
-    run_stage("Committing + pushing image to GitHub", git_commit_and_push)
+    commit_sha = run_stage("Committing + pushing image to GitHub", git_commit_and_push)
 
     import time
-    print("Waiting for GitHub's CDN to catch up...")
-    time.sleep(30)
+    print("Waiting for jsDelivr's CDN to pick up the new commit...")
+    time.sleep(15)
 
     token = os.environ["PAGE_ACCESS_TOKEN"]
 
@@ -115,10 +121,12 @@ def main():
         token,
     )
 
+    jsdelivr_url = f"https://cdn.jsdelivr.net/gh/Tobifunmi/daily-manna-automation@{commit_sha}/template/output.png"
+
     run_stage(
         "Posting to Instagram",
         post_to_instagram,
-        f"{REPO_RAW_BASE}/template/output.png",
+        jsdelivr_url,
         caption,
         token,
     )
