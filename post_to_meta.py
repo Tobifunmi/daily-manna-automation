@@ -32,12 +32,17 @@ def post_to_facebook(image_path: str, caption: str, page_access_token: str) -> d
             data={"caption": caption, "access_token": page_access_token},
             files={"source": f},
         )
-    response.raise_for_status()
+    if response.status_code != 200:
+        raise RuntimeError(f"Facebook post failed: {response.text}")
     return response.json()
 
 
 def post_to_instagram(image_public_url: str, caption: str, page_access_token: str) -> dict:
-    """Two-step Instagram publish: create a media container, then publish it."""
+    """Two-step Instagram publish: create a media container, wait for it to
+    finish processing, then publish it. Raises a descriptive error with
+    Meta's actual message if anything fails."""
+    import time
+
     # Step 1: create the media container
     container_url = f"{GRAPH_BASE}/{IG_BUSINESS_ID}/media"
     container_resp = requests.post(
@@ -48,16 +53,37 @@ def post_to_instagram(image_public_url: str, caption: str, page_access_token: st
             "access_token": page_access_token,
         },
     )
-    container_resp.raise_for_status()
+    if container_resp.status_code != 200:
+        raise RuntimeError(f"Instagram container creation failed: {container_resp.text}")
     creation_id = container_resp.json()["id"]
 
-    # Step 2: publish the container
+    # Step 2: poll until Instagram has actually finished fetching/processing
+    # the image, instead of guessing a fixed wait time
+    status_url = f"{GRAPH_BASE}/{creation_id}"
+    for attempt in range(15):  # up to ~75 seconds
+        status_resp = requests.get(
+            status_url,
+            params={"fields": "status_code", "access_token": page_access_token},
+        )
+        status_code = status_resp.json().get("status_code")
+        if status_code == "FINISHED":
+            break
+        if status_code == "ERROR":
+            raise RuntimeError(f"Instagram failed to process the image: {status_resp.text}")
+        time.sleep(5)
+    else:
+        raise RuntimeError(
+            f"Instagram container never finished processing (last status: {status_code})"
+        )
+
+    # Step 3: publish the container
     publish_url = f"{GRAPH_BASE}/{IG_BUSINESS_ID}/media_publish"
     publish_resp = requests.post(
         publish_url,
         data={"creation_id": creation_id, "access_token": page_access_token},
     )
-    publish_resp.raise_for_status()
+    if publish_resp.status_code != 200:
+        raise RuntimeError(f"Instagram publish failed: {publish_resp.text}")
     return publish_resp.json()
 
 
