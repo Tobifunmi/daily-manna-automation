@@ -27,8 +27,8 @@ OUTPUT_PATH = TEMPLATE_DIR / "output.png"
 def render_image(thought: str, bible_reference: str, date: datetime.date, output_path=OUTPUT_PATH):
     html = TEMPLATE_PATH.read_text(encoding="utf-8")
 
-    date_line_1 = f"{date.month}/{date.day}/"  # e.g. "8/10/" — works on every OS
-    date_line_2 = str(date.year)              # e.g. "2026"
+    date_line_1 = f"{date.month}/{date.day}/"  # e.g. "8/17/" — works on every OS
+    date_line_2 = str(date.year)                # e.g. "2026"
 
     html = (
         html.replace("{{THOUGHT}}", thought)
