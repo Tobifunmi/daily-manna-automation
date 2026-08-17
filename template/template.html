@@ -67,10 +67,10 @@
   /* Date, sits on the wax-seal circle bottom-left */
   #date-box {
     position: absolute;
-    left: 85px;
-    top: 497px;
-    width: 70px;
-    height: 70px;
+    left: 100px;
+    top: 500px;
+    width: 54px;
+    height: 50px;
     z-index: 1;
     display: flex;
     align-items: center;
@@ -82,7 +82,7 @@
     color: #ffffff;
     text-align: center;
     line-height: 1.15;
-    font-size: 15px;
+    font-size: 12px;
     width: 100%;
   }
 </style>
@@ -105,16 +105,30 @@
     // short text stays tight under the logo and long text never spills
     // past the seal.
     const MAX_BLOCK_HEIGHT = 265; // from top of content-wrap (195px) to seal (460px)
+    const CONTENT_WIDTH = 250;    // matches #content-wrap width
 
     function fitText() {
       const thoughtEl = document.getElementById('thought-text');
+      const bibleEl = document.getElementById('bible-text');
       const wrapEl = document.getElementById('content-wrap');
+
+      // Shrink the thought text until the whole stacked block fits vertically
       let size = 34;
       thoughtEl.style.fontSize = size + 'px';
       while (size > 14 && wrapEl.scrollHeight > MAX_BLOCK_HEIGHT) {
         size -= 1;
         thoughtEl.style.fontSize = size + 'px';
       }
+
+      // Independently shrink the Bible reference if it's too wide for the
+      // column — prevents any clipping/cutoff regardless of reference length
+      let bibleSize = 32;
+      bibleEl.style.fontSize = bibleSize + 'px';
+      while (bibleSize > 14 && bibleEl.scrollWidth > CONTENT_WIDTH) {
+        bibleSize -= 1;
+        bibleEl.style.fontSize = bibleSize + 'px';
+      }
+
       window.__fitDone = true;
     }
 

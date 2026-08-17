@@ -98,6 +98,73 @@ def post_to_instagram(image_public_url: str, caption: str, page_access_token: st
     return publish_resp.json()
 
 
+def post_to_facebook_story(image_path: str, page_access_token: str) -> dict:
+    """Facebook Stories are a two-step process: upload the photo unpublished,
+    then attach that photo to a story."""
+    # Step 1: upload the photo without publishing it to the main feed
+    upload_url = f"{GRAPH_BASE}/{PAGE_ID}/photos"
+    with open(image_path, "rb") as f:
+        upload_resp = requests.post(
+            upload_url,
+            data={"published": "false", "access_token": page_access_token},
+            files={"source": f},
+        )
+    if upload_resp.status_code != 200:
+        raise RuntimeError(f"Facebook story photo upload failed: {upload_resp.text}")
+    photo_id = upload_resp.json()["id"]
+
+    # Step 2: publish that photo as a story
+    story_url = f"{GRAPH_BASE}/{PAGE_ID}/photo_stories"
+    story_resp = requests.post(
+        story_url,
+        data={"photo_id": photo_id, "access_token": page_access_token},
+    )
+    if story_resp.status_code != 200:
+        raise RuntimeError(f"Facebook story publish failed: {story_resp.text}")
+    return story_resp.json()
+
+
+def post_to_instagram_story(image_public_url: str, page_access_token: str) -> dict:
+    """Instagram Stories use the same container flow as a regular post,
+    just with media_type=STORIES and no caption (Stories don't show captions)."""
+    import time
+
+    container_url = f"{GRAPH_BASE}/{IG_BUSINESS_ID}/media"
+    container_resp = requests.post(
+        container_url,
+        data={
+            "image_url": image_public_url,
+            "media_type": "STORIES",
+            "access_token": page_access_token,
+        },
+    )
+    if container_resp.status_code != 200:
+        raise RuntimeError(f"Instagram story container creation failed: {container_resp.text}")
+    creation_id = container_resp.json()["id"]
+
+    status_url = f"{GRAPH_BASE}/{creation_id}"
+    for _ in range(15):
+        status_resp = requests.get(
+            status_url,
+            params={"fields": "status_code", "access_token": page_access_token},
+        )
+        status_code = status_resp.json().get("status_code")
+        if status_code == "FINISHED":
+            break
+        if status_code == "ERROR":
+            raise RuntimeError(f"Instagram story failed to process: {status_resp.text}")
+        time.sleep(5)
+
+    publish_url = f"{GRAPH_BASE}/{IG_BUSINESS_ID}/media_publish"
+    publish_resp = requests.post(
+        publish_url,
+        data={"creation_id": creation_id, "access_token": page_access_token},
+    )
+    if publish_resp.status_code != 200:
+        raise RuntimeError(f"Instagram story publish failed: {publish_resp.text}")
+    return publish_resp.json()
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 4:
         print("Usage: python post_to_meta.py <image_path> <caption> <public_image_url>")

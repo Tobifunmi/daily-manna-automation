@@ -131,6 +131,22 @@ def main():
         token,
     )
 
+    from post_to_meta import post_to_facebook_story, post_to_instagram_story
+
+    run_stage(
+        "Posting to Facebook Story",
+        post_to_facebook_story,
+        "template/output.png",
+        token,
+    )
+
+    run_stage(
+        "Posting to Instagram Story",
+        post_to_instagram_story,
+        jsdelivr_url,
+        token,
+    )
+
     print("All stages completed successfully.")
 
 
