@@ -9,9 +9,35 @@ steps.
 ## How it works
 
 Runs once daily via GitHub Actions (`.github/workflows/daily_post.yml`),
-on a schedule of `0 10 * * *` (10:00 UTC = 1:00 PM Bahrain, UTC+3, no DST).
-Can also be triggered manually from the **Actions** tab for testing
+on a schedule of `13 10 * * *` (10:13 UTC ≈ 1:13 PM Bahrain, UTC+3, no
+DST). Can also be triggered manually from the **Actions** tab for testing
 (`workflow_dispatch`).
+
+**Dual-trigger setup:** GitHub's native `schedule:` cron trigger is
+best-effort, not guaranteed-time — it queues jobs for a runner rather than
+firing them instantly, and that queue delay got progressively worse (from
+~30 minutes up to 10+ hours) around the busy top-of-the-hour slot. Two
+fixes are layered on top of each other:
+1. The cron was shifted off the top of the hour (`10:13` instead of
+   `10:00`) to dodge the busiest queue window.
+2. An external scheduler at [cron-job.org](https://cron-job.org) fires a
+   `POST` request to GitHub's REST API
+   (`.../actions/workflows/daily_post.yml/dispatches`) at exactly 10:00
+   UTC daily, using a fine-grained GitHub PAT (Actions: read/write,
+   scoped to this repo only) as a `Bearer` token in the `Authorization`
+   header, with body `{"ref":"main"}`. This bypasses GitHub's internal
+   queuing entirely and acts as the reliable trigger, with the native
+   cron as a backup.
+
+**Known tradeoff:** both triggers fire independently every day, so on a
+normal day you should expect *two* full pipeline runs ~13 minutes apart
+(cron-job.org's dispatch at 10:00 UTC, then the native cron at 10:13
+UTC) — meaning the content gets posted to Facebook/Instagram twice daily
+unless this is addressed. This was accepted as a stopgap while confirming
+the external trigger works reliably; the intended next step is to
+**remove the native `schedule:` block from `daily_post.yml`** once
+cron-job.org has proven reliable over several days, leaving
+`workflow_dispatch` in place for manual testing only.
 
 Pipeline, in order (`run_daily_pipeline.py` orchestrates all of this):
 
@@ -111,10 +137,14 @@ additional fix on top of this for a separate letter-rendering issue.)
 
 ## Known behaviors / things to know
 
-- **Posting time can drift by a few minutes.** GitHub Actions scheduled
-  workflows aren't guaranteed to the second; small delays are normal.
-  Large deviations in the past were from manual test runs during
-  development, not the scheduler itself.
+- **Posting time can drift.** Small (single-digit-minute) delays from
+  GitHub Actions' scheduler are normal and not a bug. Large deviations
+  (hours late) were traced to GitHub's `schedule:` trigger queuing jobs
+  rather than firing them promptly, worse around the top of the hour —
+  now mitigated by the dual-trigger setup described above. Separately,
+  large *apparent* deviations in a planner/calendar view in the past
+  turned out to be manual `workflow_dispatch` test runs overlapping with
+  real scheduled runs in the same view, not an actual scheduler bug.
 - **Instagram's API is occasionally flaky** at the container-creation and
   publish steps ("media could not be fetched", "Media Not Found" right
   after a container reports finished). Both are handled with automatic

@@ -1,16 +1,22 @@
-# Project Context: Daily Manna Auto Poster
+# Master Context: Daily Manna Auto Poster
+
+Paste this entire document into a new conversation to bring Claude fully
+up to speed on this project before asking a new question.
+
+---
 
 ## What this is
 
 A fully automated daily social media pipeline for "Deeper Christian Life
 Ministry - Bahrain" (Instagram: @dclmbahrain / Facebook Page: "Deeper
-Christian Life Ministry - Bahrain"). Every day at 1:00 PM Bahrain time
-(no manual action required), it:
+Christian Life Ministry - Bahrain"). Every day (currently ~1:13 PM
+Bahrain time — see "Scheduling" below), with no manual action required,
+it:
 
 1. Scrapes the day's "Thought for the Day" + Bible reading from
    dailymanna.app
 2. Renders it onto a branded graphic (a scroll-and-photo design originally
-   built manually in Canva by the user, now fully templated)
+   built manually in Canva, now fully templated)
 3. Posts the graphic to Facebook (feed + Story) and Instagram (feed +
    Story), with the caption format:
    ```
@@ -25,36 +31,37 @@ Christian Life Ministry - Bahrain"). Every day at 1:00 PM Bahrain time
    ```
 
 This replaced a fully manual daily process (visit dailymanna.app → copy
-text → paste into Canva → adjust date → export → schedule on Meta Business
-Suite). X/Twitter was deliberately excluded (X's API lost its free tier in
-Feb 2026; not worth the ~$0.015/post cost or fragile browser-automation
-alternative for this use case).
+text → paste into Canva → adjust date → export → schedule on Meta
+Business Suite). X/Twitter was deliberately excluded (X's API lost its
+free tier in Feb 2026; not worth the ~$0.015/post cost or fragile
+browser-automation alternative for this use case).
 
 ## Tech stack & architecture
 
-- **Orchestration**: GitHub Actions, scheduled cron (`0 10 * * *` = 10:00
-  UTC = 1:00 PM Bahrain, no DST in Bahrain) plus manual `workflow_dispatch`
-  trigger for testing.
+- **Orchestration**: GitHub Actions — see "Scheduling" section below for
+  the current (as of Aug 29, 2026) dual-trigger setup. Plus manual
+  `workflow_dispatch` trigger for testing.
 - **Scraping**: Python + Playwright (headless Chromium) — dailymanna.app
   is JS-rendered client-side, so a plain HTTP request returns nothing
   useful; must render the page in a real browser first.
 - **Image generation**: an HTML/CSS/JS template rendered via Playwright
   and screenshotted to PNG (736×736). NOT Canva's API — Canva's Autofill
-  API requires an Enterprise plan the user doesn't have, so the design was
+  API requires an Enterprise plan not available here, so the design was
   rebuilt as a static background PNG (exported once from the original
   Canva design, with the date/text elements removed) plus dynamically
   positioned/sized text overlaid in HTML/CSS.
 - **Posting**: direct Meta Graph API calls (`requests` library in Python)
   — not Meta Business Suite, not any third-party scheduler.
-- **Image hosting for Instagram**: Instagram's API requires a public image
-  URL (can't accept a raw file upload the way Facebook's photo endpoint
-  can). Solution: the generated image is committed back into the same
-  public GitHub repo, then served via **jsDelivr** (`cdn.jsdelivr.net/gh/
-  <user>/<repo>@<commit-sha>/template/output.png`) — pinned to that day's
-  exact commit SHA (not `@main`) so there's no risk of a stale cached
-  image. (raw.githubusercontent.com was tried first and proved unreliable
-  against Instagram's fetcher specifically — real production error:
-  "Media download has failed... doesn't meet our requirements".)
+- **Image hosting for Instagram**: Instagram's API requires a public
+  image URL (can't accept a raw file upload the way Facebook's photo
+  endpoint can). Solution: the generated image is committed back into
+  the same public GitHub repo, then served via **jsDelivr**
+  (`cdn.jsdelivr.net/gh/<user>/<repo>@<commit-sha>/template/output.png`)
+  — pinned to that day's exact commit SHA (not `@main`) so there's no
+  risk of a stale cached image. (raw.githubusercontent.com was tried
+  first and proved unreliable against Instagram's fetcher specifically —
+  real production error: "Media download has failed... doesn't meet our
+  requirements".)
 - **Failure alerting**: on any pipeline failure, sends an email (via
   direct Gmail SMTP in Python, `smtplib`) containing which exact stage
   failed and the real error message/traceback — not just a generic
@@ -102,24 +109,25 @@ template/
                               handles, "THOUGHT FOR THE DAY" label) intact
   fonts/
     Raleway-VariableFont_wght.ttf   Main thought text. Weight 400
-                                      (Regular) -- user explicitly chose
-                                      this over 500/600 after a side-by-
-                                      side comparison; NOT bold (700),
-                                      which was the initial wrong guess
+                                      (Regular) -- explicitly chosen over
+                                      500/600 after a side-by-side
+                                      comparison; NOT bold (700), which
+                                      was the initial wrong guess
     Gistesy.ttf                      Script font for Bible reference +
                                       date. Had a serious bug -- see "Font
                                       bugs found and fixed" below
     OpenSauceSans-Black.ttf          Date badge text (small, white, bold,
                                       sits on the wax-seal graphic)
 .github/workflows/
-  daily_post.yml               Cron schedule + job steps: checkout, setup
-                                Python, install Playwright+deps, run
-                                run_daily_pipeline.py with secrets injected
-                                as env vars
+  daily_post.yml               Cron schedule (currently "13 10 * * *")
+                                + job steps: checkout, setup Python,
+                                install Playwright+deps, run
+                                run_daily_pipeline.py with secrets
+                                injected as env vars
 .gitignore                     Excludes __pycache__/*.pyc
 ```
 
-## Credentials / secrets (names only -- values are NOT in this document)
+## Credentials / secrets (names only — values are NOT in this document)
 
 Stored as GitHub Actions repo secrets (Settings → Secrets and variables →
 Actions):
@@ -130,13 +138,19 @@ Actions):
 - `GMAIL_APP_PASSWORD` — Gmail App Password (not the real account
   password), requires 2-Step Verification enabled on the Google account
 
+Also in use (not a GitHub secret — lives in cron-job.org's own header
+config, see "Scheduling" below):
+- A **fine-grained GitHub personal access token**, scoped to only the
+  `daily-manna-automation` repo, with `Actions: Read and write`
+  permission — used by cron-job.org to call the GitHub REST API.
+
 Known IDs (not secret, safe to reference directly):
 - Facebook Page ID: `1169129646275057`
 - Instagram Business Account ID: `17841416232075414`
 - Meta Developer app name: "DCLM Bahrain Auto Poster"
 - GitHub repo: `Tobifunmi/daily-manna-automation` (public)
 
-## Layout logic (template.html) -- exact current values
+## Layout logic (template.html) — exact current values
 
 - Parchment/text-safe zone was measured directly from background.png
   pixel data (not eyeballed): roughly x=94–414, y=195–460 in the 736×736
@@ -161,8 +175,8 @@ Known IDs (not secret, safe to reference directly):
   (initially too big/touching the seal edges, then shifted down/left to
   clear the seal's inner dashed border ring). Date format is two lines:
   `"M/D/"` (note: trailing slash IS part of the dynamically injected
-  text, added at the user's explicit request to read as "M/D/YYYY" split
-  across two lines) and `"YYYY"`.
+  text, added at explicit request to read as "M/D/YYYY" split across two
+  lines) and `"YYYY"`.
 - All three text elements load real local font files via `@font-face`
   (NOT Google Fonts CDN — an earlier attempt using the CDN link for
   Raleway silently failed to apply in some environments; switched to
@@ -193,15 +207,14 @@ affecting actual information accuracy (not just style):
    just those two glyphs, then re-exported keeping the same filename.
    Verified fix against every real-world failing example encountered
    (`"Acts 10: 1-8"`, `"Matthew 1: 18-25"`, etc.) — all render correctly
-   now. This confirmed-broken/fixed version was delivered to the user.
+   now. This confirmed-broken/fixed version was delivered.
 2. **A separate letter-rendering bug** (word "Genesis" rendering
-   scrambled as "enezig" in a live post) was found afterward. The user
-   said they fixed this one themselves before a full diagnosis was
-   completed in this conversation — so the exact root cause of the letter
-   issue (as opposed to the digit issue) was NOT conclusively identified
-   here, only reported and handed off. If it resurfaces, start by
-   checking whether the user's own fix is still in place in
-   `template/fonts/Gistesy.ttf`.
+   scrambled as "enezig" in a live post) was found afterward. This was
+   fixed independently before a full diagnosis was completed in the
+   conversation that found it — so the exact root cause of the letter
+   issue (as opposed to the digit issue) was NOT conclusively identified,
+   only reported and handed off. If it resurfaces, start by checking
+   whether that fix is still in place in `template/fonts/Gistesy.ttf`.
 
 ## Known Instagram API flakiness (handled, not a mystery if it recurs)
 
@@ -222,29 +235,61 @@ since they're on Meta's side, but retried automatically):
    `post_to_instagram_story`; the equivalent retry pattern already existed
    in the regular feed `post_to_instagram` function.
 
-## Timing / scheduling notes
+## Scheduling — full history and current state (as of Aug 29, 2026)
 
-- Cron is `0 10 * * *`, correctly corresponding to 1:00 PM Bahrain
-  (UTC+3, no DST) — confirmed correct multiple times, this has NOT been
-  the actual bug on the occasions posting time looked inconsistent.
-- Apparent large time deviations in the daily planner (e.g. posts showing
-  at 11:20 AM or 8:56 PM instead of 1:00 PM) were traced to manual
-  `workflow_dispatch` test runs during development overlapping with the
-  real scheduled runs in the same calendar view — not a scheduler bug.
-- GitHub Actions scheduled workflows are NOT guaranteed to fire at the
-  exact second; minor delays (low single-digit minutes) are normal and
-  not a bug to chase.
-- **OPEN/UNRESOLVED at time of writing**: user reported the workflow had
-  not fired by 5:00 PM on a day it should have run at 1:00 PM. Diagnosis
-  was started (asked user to check the Actions tab for: no runs at all /
-  a stuck run / a failed run) but the user redirected to other tasks
-  before an answer was given. **This should be revisited** — possible
-  causes not yet ruled out: workflow accidentally disabled in repo
-  settings, a YAML syntax issue despite "looking okay", GitHub's 60-day
-  inactivity auto-disable (unlikely given active commit history, but
-  worth checking), or repo visibility/Actions permission changes from
-  earlier in the project (the repo was toggled private→public partway
-  through this project for Instagram's fetcher to work).
+**Original setup:** GitHub Actions native `schedule:` cron, `0 10 * * *`
+(10:00 UTC = 1:00 PM Bahrain, UTC+3, no DST) — confirmed correct multiple
+times; the cron *expression* itself was never the bug.
+
+**The actual bug, diagnosed Aug 29, 2026:** GitHub's native `schedule:`
+trigger is best-effort and queues jobs for a runner rather than firing
+them instantly. This queuing delay grew progressively worse day over day
+— from ~30 minutes (normal/acceptable) up to over 10 hours late — almost
+certainly worse around the busy top-of-the-hour slot (`:00`) when many
+GitHub-wide scheduled workflows compete for runners at once. This also
+explained an earlier double-post: a manual `workflow_dispatch` test ran
+fine, and then the *original* queued 10:00 UTC scheduled run — which had
+been sitting queued all day — finally got a runner about an hour later
+and fired too, posting the same content twice.
+
+**Fix implemented (both parts done, as of Aug 29, 2026):**
+1. Shifted the native cron off the top of the hour: `daily_post.yml` now
+   uses `13 10 * * *` (10:13 UTC ≈ 1:13 PM Bahrain) instead of
+   `0 10 * * *`, to dodge the busiest queue window.
+2. Added an **external trigger** via [cron-job.org](https://cron-job.org)
+   (free tier): a cron job named "Daily Manna Automation" that fires a
+   `POST` request at exactly **10:00 UTC** daily (timezone explicitly set
+   to UTC in cron-job.org, not browser-local) to:
+   ```
+   https://api.github.com/repos/Tobifunmi/daily-manna-automation/actions/workflows/daily_post.yml/dispatches
+   ```
+   with headers `Content-Type: application/json` and
+   `Authorization: Bearer <fine-grained GitHub PAT, scoped to this repo,
+   Actions: Read and write>`, and body `{"ref":"main"}`. This bypasses
+   GitHub's internal queuing entirely. A test run confirmed a `204 No
+   Content` response (GitHub's correct success response for
+   `workflow_dispatch` — no body expected) and the token's rate limit
+   showed as healthy (4979/5000 remaining).
+
+**Known open tradeoff (not yet resolved):** because both triggers are
+now active, the pipeline is expected to run **twice** most days — once
+from cron-job.org at 10:00 UTC, once from the native GitHub cron at
+10:13 UTC — meaning duplicate posts to Facebook/Instagram until this is
+addressed. This was accepted deliberately as a short-term "prove the
+external trigger works" period. **Next step, not yet done:** once
+cron-job.org has run reliably for several days, remove the native
+`schedule:` block from `daily_post.yml` entirely (keep
+`workflow_dispatch` for manual testing), making cron-job.org the sole
+scheduler.
+
+**Other timing notes (still true, not the bug):**
+- GitHub Actions scheduled workflows are never guaranteed to the exact
+  second; minor delays (low single-digit minutes) are normal and not
+  worth chasing.
+- Apparent large time deviations seen in a planner/calendar view in the
+  past were traced to manual `workflow_dispatch` test runs overlapping
+  with real scheduled runs in the same calendar view — not a scheduler
+  bug.
 
 ## Design decisions made along the way (so they aren't re-litigated)
 
@@ -252,26 +297,48 @@ since they're on Meta's side, but retried automatically):
   nothing sensitive is stored in it (token is never committed as a file).
 - Scheduling posts natively via Facebook's `scheduled_publish_time` was
   deliberately rejected in favor of just running the whole pipeline at
-  the real target time (1PM) — fewer moving parts, one thing to debug
-  instead of two.
+  the real target time — fewer moving parts, one thing to debug instead
+  of two.
 - X/Twitter is deliberately excluded (see "What this is" above).
 - Failure alerts deliberately go via **email (Gmail SMTP)**, not a push
-  notification app (ntfy.sh was proposed and explicitly rejected by the
-  user because it required installing a new phone app).
+  notification app (ntfy.sh was proposed and explicitly rejected because
+  it required installing a new phone app).
 - The `__pycache__` folders got accidentally committed once; a
   `.gitignore` was added afterward to stop it recurring — if you see
   compiled `.pyc` files tracked in the repo again, that's a regression.
+- Chose cron-job.org (free tier) over other external-scheduler options
+  for the dual-trigger fix — no evaluation of alternatives was recorded,
+  so if it ever becomes a problem (reliability, free-tier limits), that
+  comparison hasn't been done yet.
 
-## How the user works (useful context for future help)
+## How the user (Philip) works — useful context for future help
 
-- Uses Windows + VS Code + PowerShell terminal + Git. Needed detailed,
-  literal, copy-paste-exact command guidance throughout (not
-  comfortable assuming CLI familiarity) -- explain *where* to run a
-  command (which terminal/app) as well as *what* to run, don't assume
-  environment variables persist across terminal restarts, etc.
+- Uses Windows + VS Code + PowerShell terminal + Git. Needs detailed,
+  literal, copy-paste-exact command guidance throughout (not assumed
+  comfortable with CLI) — explain *where* to run a command (which
+  terminal/app) as well as *what* to run, don't assume environment
+  variables persist across terminal restarts, etc.
 - Prefers being shown a visual preview/comparison before a change is
   applied to the live template, especially for anything involving exact
   positioning or sizing (established pattern: render a preview, get
   explicit approval, then apply to the real file).
 - Wants failures to be genuinely informative (the whole point of the
   email-alert feature) — not just "it broke," but which stage and why.
+- Works across multiple client projects/pipelines (this is one of
+  several) under or adjacent to ZeroToZenith Media — a digital marketing
+  and cybersecurity training organization — so scheduling collisions or
+  patterns affecting one project may be worth checking against others.
+
+## Outstanding items as of Aug 29, 2026
+
+1. **Confirm the dual-trigger fix holds** over the next several days —
+   watch for both a cron-job.org-triggered run (~10:00 UTC) and a
+   native-cron run (~10:13 UTC) actually landing, and check whether the
+   duplicate-post tradeoff is acceptable short-term or needs the native
+   `schedule:` trigger removed sooner rather than later.
+2. **Remove the native `schedule:` trigger** from `daily_post.yml` once
+   cron-job.org is trusted, to eliminate the duplicate-post risk.
+3. **Fine-grained GitHub PAT expiration** — set during creation (a
+   typical choice is 90 days); needs manual renewal before it expires or
+   the cron-job.org trigger will silently start failing with 401s. Not
+   currently on any calendar/reminder.
