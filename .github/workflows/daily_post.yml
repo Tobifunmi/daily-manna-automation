@@ -2,8 +2,8 @@ name: Daily Manna Auto Post
 
 on:
   schedule:
-    # 10:00 UTC = 1:00 PM Bahrain time (UTC+3, no daylight saving)
-    - cron: "0 10 * * *"
+    # 10:13 UTC = 1:13 PM Bahrain time (UTC+3, no daylight saving)
+    - cron: "13 10 * * *" 
   workflow_dispatch: {}  # lets you manually trigger a run from the GitHub Actions tab, for testing
 
 permissions:
