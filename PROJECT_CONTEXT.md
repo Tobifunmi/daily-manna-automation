@@ -1,9 +1,5 @@
 # Project Context: Daily Manna Auto Poster
 
-Paste this whole document into a new conversation to give full context on
-an existing, working, fully-automated system — not a project being
-planned, one already live in production.
-
 ## What this is
 
 A fully automated daily social media pipeline for "Deeper Christian Life
