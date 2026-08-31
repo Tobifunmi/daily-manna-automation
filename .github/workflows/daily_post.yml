@@ -1,10 +1,20 @@
 name: Daily Manna Auto Post
 
 on:
-  schedule:
-    # 10:13 UTC = 1:13 PM Bahrain time (UTC+3, no daylight saving)
-    - cron: "13 10 * * *" 
-  workflow_dispatch: {}  # lets you manually trigger a run from the GitHub Actions tab, for testing
+  # Native GitHub cron trigger — DISABLED as of Aug 30, 2026.
+  # Reason: GitHub's schedule: trigger is best-effort, not guaranteed-time.
+  # It queues jobs for a runner rather than firing them instantly, and the
+  # delay got progressively worse (from ~30min up to 10+ hours late,
+  # worst around the top of the hour). Shifting the cron minute from :00
+  # to :13 helped some days but not reliably — confirmed still firing
+  # ~5 hours late on Aug 30. Replaced with an external trigger via
+  # cron-job.org, which POSTs to this workflow's workflow_dispatch
+  # endpoint at exactly 10:00 UTC daily and has proven reliable.
+  # Kept here (commented out) for reference in case it's ever needed again.
+  # schedule:
+  #   # 10:13 UTC = 1:13 PM Bahrain time (UTC+3, no daylight saving)
+  #   - cron: "13 10 * * *"
+  workflow_dispatch: {}  # lets you manually trigger a run from the GitHub Actions tab, for testing (also used by the cron-job.org external trigger)
 
 permissions:
   contents: write
