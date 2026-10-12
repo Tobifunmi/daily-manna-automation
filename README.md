@@ -6,38 +6,29 @@ it onto a branded graphic, and posts it to Facebook, Instagram, and both
 platforms' Stories — every day at 1:00 PM Bahrain time, with no manual
 steps.
 
+This repo also hosts a second, independent automation: the **Daily
+Follower Report** (see the section of that name below), which pulls the
+page's follower counts and sends them out by email (and WhatsApp, once
+activated) every day.
+
 ## How it works
 
-Runs once daily via GitHub Actions (`.github/workflows/daily_post.yml`),
-on a schedule of `13 10 * * *` (10:13 UTC ≈ 1:13 PM Bahrain, UTC+3, no
-DST). Can also be triggered manually from the **Actions** tab for testing
-(`workflow_dispatch`).
+Runs once daily via GitHub Actions (`.github/workflows/daily_post.yml`).
+The workflow is triggered by an external scheduler at
+[cron-job.org](https://cron-job.org), which fires a `POST` request to
+GitHub's REST API (`.../actions/workflows/daily_post.yml/dispatches`) at
+exactly 10:00 UTC (1:00 PM Bahrain, UTC+3, no DST), using a fine-grained
+GitHub PAT (Actions: read/write, scoped to this repo only) as a `Bearer`
+token in the `Authorization` header, with body `{"ref":"main"}`. The
+workflow can also be triggered manually from the **Actions** tab for
+testing (`workflow_dispatch`).
 
-**Dual-trigger setup:** GitHub's native `schedule:` cron trigger is
+**Why an external trigger:** GitHub's native `schedule:` cron trigger is
 best-effort, not guaranteed-time — it queues jobs for a runner rather than
 firing them instantly, and that queue delay got progressively worse (from
-~30 minutes up to 10+ hours) around the busy top-of-the-hour slot. Two
-fixes are layered on top of each other:
-1. The cron was shifted off the top of the hour (`10:13` instead of
-   `10:00`) to dodge the busiest queue window.
-2. An external scheduler at [cron-job.org](https://cron-job.org) fires a
-   `POST` request to GitHub's REST API
-   (`.../actions/workflows/daily_post.yml/dispatches`) at exactly 10:00
-   UTC daily, using a fine-grained GitHub PAT (Actions: read/write,
-   scoped to this repo only) as a `Bearer` token in the `Authorization`
-   header, with body `{"ref":"main"}`. This bypasses GitHub's internal
-   queuing entirely and acts as the reliable trigger, with the native
-   cron as a backup.
-
-**Known tradeoff:** both triggers fire independently every day, so on a
-normal day you should expect *two* full pipeline runs ~13 minutes apart
-(cron-job.org's dispatch at 10:00 UTC, then the native cron at 10:13
-UTC) — meaning the content gets posted to Facebook/Instagram twice daily
-unless this is addressed. This was accepted as a stopgap while confirming
-the external trigger works reliably; the intended next step is to
-**remove the native `schedule:` block from `daily_post.yml`** once
-cron-job.org has proven reliable over several days, leaving
-`workflow_dispatch` in place for manual testing only.
+~30 minutes up to 10+ hours). The native `schedule:` block has since been
+removed from `daily_post.yml` entirely; cron-job.org is the sole daily
+trigger, and `workflow_dispatch` remains for manual testing.
 
 Pipeline, in order (`run_daily_pipeline.py` orchestrates all of this):
 
@@ -64,6 +55,74 @@ Pipeline, in order (`run_daily_pipeline.py` orchestrates all of this):
    emails the failure reason (which stage, the actual error message) via
    Gmail SMTP, and the GitHub Actions run also shows as failed (red ❌).
 
+## Daily Follower Report
+
+A separate workflow that reports the DCLM Bahrain follower counts every
+day, replacing a manual task (checking each platform and typing the numbers
+into a WhatsApp message for a group).
+
+**Output format** (month/day/year):
+
+```
+10/12/2026 - DCLM Followers
+Facebook: 1604
+Instagram: 23
+Twitter: 1
+YouTube: 33
+```
+
+**How it runs:** `.github/workflows/follower_report.yml` (manual
+`workflow_dispatch` only, no native schedule) runs `follower_report.py`.
+A second cron-job.org job, "Follower report", fires a `POST` to
+`https://api.github.com/repos/Tobifunmi/daily-manna-automation/actions/workflows/follower_report.yml/dispatches`
+daily at 12:30 PM WAT (11:30 UTC), using the same fine-grained PAT and
+`{"ref":"main"}` body as the posting job (it was created by cloning that
+job). A successful dispatch returns HTTP 204.
+
+**Where each number comes from:**
+
+| Platform  | Source |
+|-----------|--------|
+| Facebook  | Graph API `followers_count` for the Page, using the existing `PAGE_ACCESS_TOKEN` |
+| Instagram | Graph API `followers_count` for the Instagram Business Account, same token |
+| YouTube   | YouTube Data API v3 `subscriberCount`, using `YT_API_KEY` + `YT_CHANNEL_ID` |
+| Twitter/X | **Not fetched** — X's API isn't free. The value is a manual number (default `1`) set by `X_FOLLOWERS_MANUAL` in `follower_report.py`; update it by hand when it changes (or pass `X_FOLLOWERS_MANUAL` as an env var in `follower_report.yml`) |
+
+If one platform's call fails, that line shows `n/a` and the rest of the
+report still goes out.
+
+**Delivery:** the script sends the finished message two ways, so the
+report can be forwarded to the WhatsApp group with one tap:
+
+- **Email** (always on) — Gmail SMTP using the existing `GMAIL_ADDRESS` and
+  `GMAIL_APP_PASSWORD` secrets. Sent to `GMAIL_ADDRESS` unless an optional
+  `EMAIL_TO` secret is set. Subject = the report's first line.
+- **WhatsApp via [CallMeBot](https://www.callmebot.com/blog/free-api-whatsapp-messages/)**
+  (free, personal use) — skipped automatically while `CALLMEBOT_APIKEY` is
+  not set. Once set, both channels fire every run. Note the message arrives
+  from CallMeBot's number, not your own; it can only message the number that
+  activated it. **Status as of Oct 12, 2026:** activation still pending
+  (CallMeBot says to retry after 24 hours if no key arrives within
+  2 minutes).
+
+**Failure behavior:** CallMeBot returns HTTP 200 even when it rejects a
+request, so the script also checks the response text for `ERROR`. If
+WhatsApp is configured but fails, the email still goes out with
+"(WhatsApp failed)" in the subject and the error in the body, and the run
+turns red. If the email send fails, the run turns red too.
+
+**Secrets used by this workflow** (in addition to the existing
+`PAGE_ACCESS_TOKEN`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`):
+`YT_API_KEY`, `YT_CHANNEL_ID`, `CALLMEBOT_PHONE`, `CALLMEBOT_APIKEY`, and
+optionally `EMAIL_TO`. The Facebook Page ID and Instagram Business Account
+ID are set directly in the workflow file (they aren't sensitive).
+Optional env vars supported by the script: `DATE_ORDER` (`MDY` default,
+or `DMY`), `TIMEZONE` (default `Asia/Bahrain`, used for the date),
+`REPORT_LABEL` (default `DCLM Followers`).
+
+**Considered and rejected:** Telegram delivery (explicitly not wanted).
+ntfy.sh was offered as a free push alternative but not adopted.
+
 ## Repo structure
 
 ```
@@ -78,6 +137,10 @@ run_daily_pipeline.py       Orchestrates the full daily pipeline with
 debug_instagram_post.py     Manual diagnostic script -- shows the full
                              Instagram container/publish response instead
                              of a generic error
+follower_report.py          Daily follower report: pulls Facebook /
+                             Instagram / YouTube counts (X is manual),
+                             formats the message, sends by email and
+                             (when activated) WhatsApp via CallMeBot
 template/
   template.html              HTML/CSS/JS template -- the image design
   render_daily_image.py      Fills the template + screenshots it via
@@ -91,7 +154,10 @@ template/
                                       (repaired -- see "Font fixes" below)
     OpenSauceSans-Black.ttf          Date badge text
 .github/workflows/
-  daily_post.yml              The GitHub Actions schedule + job definition
+  daily_post.yml              The GitHub Actions job definition for the
+                              daily post (workflow_dispatch only)
+  follower_report.yml         The GitHub Actions job definition for the
+                              follower report (workflow_dispatch only)
 ```
 
 ## One-time setup (already done, documented for reference)
@@ -101,19 +167,20 @@ template/
   Page Access Token (via Graph API Explorer → long-lived token exchange →
   Page token exchange).
 - **GitHub repo secrets**: `PAGE_ACCESS_TOKEN`, `GMAIL_ADDRESS`,
-  `GMAIL_APP_PASSWORD`.
+  `GMAIL_APP_PASSWORD`, plus the follower-report secrets listed above.
 - **Repo visibility: public.** Required because Instagram's API must be
   able to fetch the image from a public URL; nothing sensitive is stored
-  in the repo itself (the token only ever lives as a GitHub Secret / local
-  environment variable, never committed as a file).
+  in the repo itself (tokens and keys only ever live as GitHub Secrets /
+  local environment variables, never committed as a file). Don't hardcode
+  phone numbers or API keys in workflow files for the same reason.
 - **Facebook Page ID**: `1169129646275057`
 - **Instagram Business Account ID**: `17841416232075414`
+- **YouTube Data API key**: created in Google Cloud Console (project with
+  "YouTube Data API v3" enabled) — AI Studio is not needed.
 
 ## Why jsDelivr instead of raw.githubusercontent.com
 
-Instagram's media-fetch step was unreliable against
-`raw.githubusercontent.com` directly (real error hit in production:
-`"Media download has failed... doesn't meet our requirements"`). Switched
+Instagram's media-fetch step was unreliable against `raw.githubusercontent.com` directly (real error hit in production: `"Media download has failed... doesn't meet our requirements"`). Switched
 to jsDelivr (`cdn.jsdelivr.net/gh/...`), a CDN built for exactly this kind
 of hotlinking, and pinned the URL to that day's exact git commit SHA
 (rather than `@main`) so there's zero risk of Instagram ever fetching a
@@ -129,19 +196,17 @@ genuine broken glyph). Root cause: self-overlapping contour paths in
 those two glyphs specifically — a common defect in fonts generated from
 handwriting samples.
 
-Fixed by running the font through FontForge's `removeOverlap()` +
-`simplify()` + `correctDirection()` on just those two glyphs, then
+Fixed by running the font through FontForge's `removeOverlap()` + `simplify()` + `correctDirection()` on just those two glyphs, then
 re-exporting. Verified against every real Bible reference that had
 previously failed in production. (Philip subsequently applied his own
 additional fix on top of this for a separate letter-rendering issue.)
 
 ## Known behaviors / things to know
 
-- **Posting time can drift.** Small (single-digit-minute) delays from
-  GitHub Actions' scheduler are normal and not a bug. Large deviations
-  (hours late) were traced to GitHub's `schedule:` trigger queuing jobs
-  rather than firing them promptly, worse around the top of the hour —
-  now mitigated by the dual-trigger setup described above. Separately,
+- **Posting time can drift slightly.** Small (single-digit-minute) delays
+  from GitHub Actions are normal and not a bug. Large deviations (hours
+  late) were traced to GitHub's native `schedule:` trigger queuing jobs —
+  now eliminated by using cron-job.org as the only trigger. Separately,
   large *apparent* deviations in a planner/calendar view in the past
   turned out to be manual `workflow_dispatch` test runs overlapping with
   real scheduled runs in the same view, not an actual scheduler bug.
@@ -149,21 +214,29 @@ additional fix on top of this for a separate letter-rendering issue.)
   publish steps ("media could not be fetched", "Media Not Found" right
   after a container reports finished). Both are handled with automatic
   retries (up to 4 attempts, 10s apart) rather than failing immediately.
-- **X/Twitter is intentionally not included** — X's API no longer has a
-  free tier as of Feb 2026 (pay-per-post, ~$0.015/post); decision was made
-  to skip it rather than pay or use fragile browser automation.
-- If a run fails for any reason, check your email first — the failure
-  alert names the exact stage and the real error message.
+- **X/Twitter is intentionally not included in the daily post** — X's API
+  no longer has a free tier as of Feb 2026 (pay-per-post, ~$0.015/post);
+  decision was made to skip it rather than pay or use fragile browser
+  automation. In the follower report, X is a manually maintained number.
+- **The cron-job.org GitHub PAT expires.** Both cron-job.org jobs share
+  one fine-grained PAT; renew it before it expires or both triggers will
+  silently start failing with 401s.
+- If a daily-post run fails for any reason, check your email first — the
+  failure alert names the exact stage and the real error message. For the
+  follower report, a red run in the Actions tab (and, for WhatsApp
+  failures, a "(WhatsApp failed)" email subject) is the signal.
 
 ## Local testing
 
 Requires Python 3.12+, plus:
+
 ```
 pip install playwright requests
 playwright install chromium --with-deps
 ```
 
 Run the full pipeline locally:
+
 ```
 python run_daily_pipeline.py
 ```
@@ -173,3 +246,8 @@ environment variables first (PowerShell: `$env:VAR_NAME="value"`).
 
 **Warning:** running this locally makes real, live posts to Facebook and
 Instagram (main feed + Stories on both) — there's no "dry run" mode.
+
+The follower report only needs `requests`
+(`python follower_report.py`) and is safe to run locally: it posts
+nothing publicly, it only sends you the email (and WhatsApp message, if
+configured). Set the env vars listed in the follower-report section first.
