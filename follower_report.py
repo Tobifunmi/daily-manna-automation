@@ -1,13 +1,17 @@
 """Daily follower-count report for DCLM Bahrain.
 
 Pulls follower counts from Facebook, Instagram, YouTube (and X if possible),
-formats the WhatsApp-ready message, and sends it to you on WhatsApp (via
-CallMeBot) so you can forward it to the group with one tap.
+formats the WhatsApp-ready message, and sends it to you by email (Gmail SMTP)
+and on WhatsApp (via CallMeBot, skipped until CALLMEBOT_APIKEY is set) so you
+can forward it to the group with one tap.
 
 All secrets come from environment variables (GitHub Actions secrets).
 """
 import os
+import smtplib
+import sys
 from datetime import datetime
+from email.message import EmailMessage
 from zoneinfo import ZoneInfo
 
 import requests
@@ -106,9 +110,44 @@ def send_whatsapp(text):
     )
     print("CallMeBot response:", r.status_code, r.text[:200])
     r.raise_for_status()
+    if "ERROR" in r.text.upper():
+        raise RuntimeError(f"CallMeBot rejected the message: {r.text[:200]}")
+
+
+def send_email(text, note=""):
+    sender = env("GMAIL_ADDRESS")
+    msg = EmailMessage()
+    msg["Subject"] = text.splitlines()[0] + (" (WhatsApp failed)" if note else "")
+    msg["From"] = sender
+    msg["To"] = env("EMAIL_TO") or sender
+    msg.set_content(text + (f"\n\n{note}" if note else ""))
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=TIMEOUT) as smtp:
+        smtp.login(sender, env("GMAIL_APP_PASSWORD"))
+        smtp.send_message(msg)
 
 
 if __name__ == "__main__":
     message = build_message()
     print(message)
-    send_whatsapp(message)
+    errors = []
+
+    note = ""
+    if env("CALLMEBOT_APIKEY"):
+        try:
+            send_whatsapp(message)
+        except Exception as exc:
+            note = f"WhatsApp send failed: {exc}"
+            errors.append(note)
+            print(note)
+    else:
+        print("CALLMEBOT_APIKEY not set - skipping WhatsApp")
+
+    try:
+        send_email(message, note)
+        print("Email sent")
+    except Exception as exc:
+        errors.append(f"Email send failed: {exc}")
+        print(errors[-1])
+
+    if errors:
+        sys.exit(1)
