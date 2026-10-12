@@ -1,8 +1,8 @@
 """Daily follower-count report for DCLM Bahrain.
 
 Pulls follower counts from Facebook, Instagram, YouTube (and X if possible),
-formats the WhatsApp-ready message, and sends it to you on Telegram so you can
-forward it to the group with one tap.
+formats the WhatsApp-ready message, and sends it to you on WhatsApp (via
+CallMeBot) so you can forward it to the group with one tap.
 
 All secrets come from environment variables (GitHub Actions secrets).
 """
@@ -94,16 +94,21 @@ def build_message():
     )
 
 
-def send_telegram(text):
-    r = requests.post(
-        f"https://api.telegram.org/bot{env('TG_BOT_TOKEN')}/sendMessage",
-        json={"chat_id": env("TG_CHAT_ID"), "text": text},
+def send_whatsapp(text):
+    r = requests.get(
+        "https://api.callmebot.com/whatsapp.php",
+        params={
+            "phone": env("CALLMEBOT_PHONE"),
+            "apikey": env("CALLMEBOT_APIKEY"),
+            "text": text,
+        },
         timeout=TIMEOUT,
     )
+    print("CallMeBot response:", r.status_code, r.text[:200])
     r.raise_for_status()
 
 
 if __name__ == "__main__":
     message = build_message()
     print(message)
-    send_telegram(message)
+    send_whatsapp(message)
